@@ -1,0 +1,92 @@
+ <html>
+ <head>
+   
+    <link type="text/css" rel="stylesheet" href="/stylesheets/main.css" />
+    <script src='/_ah/channel/jsapi'></script>
+    <script src='https://ajax.googleapis.com/ajax/libs/jquery/1.4.4/jquery.min.js'></script>
+    <script type='text/javascript'>
+    
+      var state = {
+        game_key: '{{ key }}'
+      };
+      
+      sendMessage = function(path, opt_param) {
+        path += '?g=' + state.game_key;
+        if (opt_param) {
+          path += '&' + opt_param;
+        }
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', path, true);
+        xhr.send();
+      };
+
+      onOpened = function() {
+        sendMessage('/handshake');
+      };
+
+      onClose = function() {
+        sendMessage('/closed');
+      };
+      
+      openChannel = function() {
+        var token = '{{ token }}';
+        var channel = new goog.appengine.Channel(token);
+        var handler = {
+          'onopen': onOpened,
+          'onmessage': onMessage,
+          'onerror': function() {},
+          'onclose': onClose
+        };
+        var socket = channel.open(handler);
+        socket.onopen = onOpened;
+        socket.onmessage = onMessage;
+      }
+      
+      initialize = function() {
+        openChannel();
+      }      
+      
+      onMessage = function(m) {
+        $m = eval("("+m.data+")");
+        if(!!$m.action){
+          switch($m.action){
+            case "display_users":
+               displayUsers($m.users);
+            break;          
+          }
+        }
+      }
+
+function displayUsers(users){
+  $('.users').empty();
+  $(users).each(function(){
+    $('.users').append('<h3>' + this + '</h3>'); 
+  });
+}
+
+$(document).ready(function(){
+  initialize(); 
+});
+      
+$(window).unload( function () { onClose(); } );
+
+  </script>
+  </head>
+  <body>
+   <div class="users"></div>
+    {%for docs in documents%}
+
+    {{docs.title.text}}
+
+    {%endfor%}
+    
+
+    <form action="/sign" method="post">
+      <div><textarea name="content" rows="3" cols="60"></textarea></div>
+      <div><input type="submit" value="Sign Guestbook"></div>
+    </form>
+    {{nickname}}
+    <a href="{{ url }}">{{ url_linktext }}</a>
+
+  </body>
+</html>
