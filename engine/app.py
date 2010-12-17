@@ -163,7 +163,6 @@ def addConnection():
             connection = Connection(key_name = userkey);
             connection.person = user
             connection.channelKey = userkey;
-            connection.position = db.GeoPt(0, 0);
             connection.put();
             return userkey;
           
