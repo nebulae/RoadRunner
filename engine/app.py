@@ -8,6 +8,7 @@ import gdata
 import gdata.docs
 import gdata.docs.service
 import gdata.docs.client
+import string
 
 from django.utils import simplejson
 from google.appengine.api import channel
@@ -16,10 +17,22 @@ from google.appengine.ext import db
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp import template
 from google.appengine.ext.webapp.util import run_wsgi_app
+from StringIO import StringIO
+from string import join
 
 class Connection(db.Model):
     person = db.UserProperty()
     channelKey = db.StringProperty() 
+    latitude = db.FloatProperty()
+    longitude = db.FloatProperty()
+    
+class UserAndLocation():
+    person = None
+    latitude = None
+    longitude = None
+    def toJson(self):
+        return { 'person' : self.person.nickname(), 'latitude': self.latitude, 'longitude' : self.longitude}
+    
     
 class UsersResponse():
     action = "display_users";
@@ -28,15 +41,31 @@ class UsersResponse():
     def get_users(self):
         return self.users
     
+    def get_users_json(self):
+        strings = [];
+        for user in self.users:
+            strings.append(user.toJson())
+        return strings
+    
     def dispatch(self):
         people_query = Connection.all();          
         self.users = [];
         for connection in people_query:
-            self.users.append(connection.person.nickname());
+            ul = UserAndLocation();
+            ul.person = connection.person
+            ul.latitude = connection.latitude
+            ul.longitude = connection.longitude
+            self.users.append(ul);
+
         people_query = Connection.all();
-        response = "{action: '"+self.action+"', users : "+simplejson.dumps(self.users)+"}"; 
+        response = {
+                    'action': self.action, 
+                    'users' : self.get_users_json()
+        }; 
+        
         for connection in people_query:
-            channel.send_message(connection.channelKey, response);
+            logging.log(logging.INFO, "to " + connection.channelKey + ": " + simplejson.dumps(response))
+            channel.send_message(connection.channelKey, simplejson.dumps(response));
     
 class ConnectionClosed(webapp.RequestHandler):
     def post(self):
@@ -53,10 +82,14 @@ class Handshake(webapp.RequestHandler):
     def post(self):
 #        get the key from the request
         key = self.request.get('g');
-        user = users.get_current_user();
-#        send the welcome to the user
-        channel.send_message(key, "{ message : 'welcome " + user.nickname() + "' }");
-#        send the notification to everyone else
+        lat = self.request.get('latitude');
+        lng = self.request.get('longitude');
+        c = Connection.gql("where channelKey='" + key + "'");
+        for connection in c:
+            connection.latitude = float(lat)
+            connection.longitude = float(lng)
+            db.put(connection)
+        
         ur = UsersResponse();
         ur.dispatch();
       
@@ -67,8 +100,32 @@ class GetConnectedUsers:
         for connection in people_query:
             respo.append(connection.person.nickname());
         
-        self.response.out.write(simplejson.dumps(respo));
+        self.response.out.write(respo);
         
+class Dispatcher(webapp.RequestHandler):
+    def get(self):
+        user = users.GetCurrentUser()
+        if user:
+            url = users.create_logout_url(self.request.uri)
+            url_linktext = 'Logout'
+            userkey = addConnection();
+            token = channel.create_channel(userkey)
+            template_values = {
+                               'url': url,
+                               'token' : token,
+                               'key': userkey,
+                               'url_linktext': url_linktext,
+                               'initial_message': 'foo!',
+                               'nickname' : user.nickname()
+            }
+            path = os.path.join(os.path.dirname(__file__), 'index.html')
+            self.response.out.write(template.render(path, template_values))
+        else : 
+            url = users.create_login_url(self.request.uri)
+            self.redirect(url)
+
+             
+    
               
 class MainPage(webapp.RequestHandler):
     def get(self):
@@ -80,18 +137,13 @@ class MainPage(webapp.RequestHandler):
         if user:
             url = users.create_logout_url(self.request.uri)
             url_linktext = 'Logout'
-            userkey = user.user_id()
-#create the new connection to store 
-            connection = Connection(key_name = userkey);
-            connection.person = user
-            connection.channelKey = userkey;
-            connection.put();
-            token = channel.create_channel(user.user_id())
+            userkey = addConnection();
+            token = channel.create_channel(userkey)
             template_values = {
                                'url': url,
                                'token' : token,
                                'documents' : documents_feed,
-                               'key': user.user_id(),
+                               'key': userkey,
                                'url_linktext': url_linktext,
                                'initial_message': 'foo!',
                                'nickname' : user.nickname()
@@ -103,10 +155,22 @@ class MainPage(webapp.RequestHandler):
             url = users.create_login_url(self.request.uri)
             self.redirect(url)
               
-              
+        
+def addConnection():
+    user = users.get_current_user()
+    if user:
+            userkey = user.user_id()
+            connection = Connection(key_name = userkey);
+            connection.person = user
+            connection.channelKey = userkey;
+            connection.position = db.GeoPt(0, 0);
+            connection.put();
+            return userkey;
+          
               
 application = webapp.WSGIApplication([('/', MainPage),
                                       ('/handshake', Handshake),
+                                      ('/dispatchview', Dispatcher),
                                       ('/closed', ConnectionClosed),
                                       ('/users', GetConnectedUsers)],debug=True)
 

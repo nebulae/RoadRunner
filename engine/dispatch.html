@@ -3,32 +3,26 @@
    
     <link type="text/css" rel="stylesheet" href="/stylesheets/main.css" />
     <script src='/_ah/channel/jsapi'></script>
-    <script src='https://ajax.googleapis.com/ajax/libs/jquery/1.4.4/jquery.min.js'></script>
-    <script type="text/javascript" src='/scripts/script.js'></script>
     <script type="text/javascript" src="http://maps.google.com/maps/api/js?sensor=true"></script>
+    <script src='https://ajax.googleapis.com/ajax/libs/jquery/1.4.4/jquery.min.js'></script>
     <script type='text/javascript'>
     
       var state = {
         game_key: '{{ key }}'
       };
       
-      var position = {};
-      var map;
-      
-      sendMessage = function(path, opt_param, data) {
+      sendMessage = function(path, opt_param) {
         path += '?g=' + state.game_key;
         if (opt_param) {
           path += '&' + opt_param;
         }
         var xhr = new XMLHttpRequest();
         xhr.open('POST', path, true);
-        xhr.send(data);
+        xhr.send();
       };
 
       onOpened = function() {
-        sendMessage('/handshake',
-          "latitude="+position.coords.latitude +
-          "&longitude="+ position.coords.longitude);
+        sendMessage('/handshake');
       };
 
       onClose = function() {
@@ -50,8 +44,8 @@
       }
       
       initialize = function() {
-        navigator.geolocation.getCurrentPosition(function(pos){
-          position = pos;
+        openChannel();
+        navigator.geolocation.getCurrentPosition(function(position){
           var lat = position.coords.latitude; 
           var lng = position.coords.longitude
           var myLatlng = new google.maps.LatLng(lat, lng);
@@ -60,8 +54,7 @@
             center: myLatlng,
             mapTypeId: google.maps.MapTypeId.ROADMAP
           }
-          map = new google.maps.Map(document.getElementById("map_canvas"), myOptions);
-          openChannel();
+          var map = new google.maps.Map(document.getElementById("map_canvas"), myOptions);
         });
       }      
       
@@ -77,16 +70,9 @@
       }
 
 function displayUsers(users){
-//  var users = eval("("+users+")");
   $('.users').empty();
   $(users).each(function(){
-    $('.users').append('<h3>' + this.person + '</h3>'); 
-    var userlatlon = new google.maps.LatLng(this.latitude,this.longitude);
-    var marker = new google.maps.Marker({
-      position: userlatlon,
-      title:this.person
-    });
-    marker.setMap(map);
+    $('.users').append('<h3>' + this + '</h3>'); 
   });
 }
 
@@ -101,11 +87,6 @@ $(window).unload( function () { onClose(); } );
   <body>
     <div id="map_canvas"></div>
     <div class="users"></div>
-    {%for docs in documents.entry%}
-      
-    {{docs.title.text}}<br />
-
-    {%endfor%}
         
     {{nickname}} <a href="{{ url }}">{{ url_linktext }}</a>
 
