@@ -13,33 +13,29 @@ var state = {
   key: '{{ key }}'
 };
 
+var position = {};
+var markers = [];
 var initialLocations = [];
-{% ifequal templateType "index" %}
+var map;
+
 {% for location in locations %}
 initialLocations.push({'name': '{{location.name}}','address': '{{location.address}}','latitude': {{location.latitude}},'longitude': {{location.longitude}},'placekey': '{{location.placekey}}'});
 {% endfor %}
-{% endifequal %}
       
-var position = {};
-var markers = [];
-var map;
-      
-sendMessage = function(path, opt_param, data) {
+sendMessage = function(path, opt_param) {
   path += '?g=' + state.key;
   if (opt_param) {
     path += '&' + opt_param;
   }
   var xhr = new XMLHttpRequest();
   xhr.open('POST', path, true);
-  xhr.send(data);
+  xhr.send();
 };
 
 onOpened = function() {
-  {% ifequal templateType "index" %}
   sendMessage('/handshake',
     "latitude="+position.coords.latitude || "" +
     "&longitude="+ position.coords.longitude || "");
-  {%endifequal%}
 };
 
 onClose = function() {
@@ -61,7 +57,6 @@ openChannel = function() {
 }
       
 initialize = function() {
-  {% ifequal templateType "index" %}
   if(!!navigator.geolocation){
     navigator.geolocation.getCurrentPosition(function(pos){
       position = pos;
@@ -86,22 +81,52 @@ initialize = function() {
     openChannel();
       setTimeout(function(){bindLocations(initialLocations)}, 1000);
   }
-  
-  {%endifequal%}
-  {%ifnotequal templateType "index"%}
   openChannel();
-  {%endifnotequal%}
   $('.addMe').unbind().click(function(){
     $('input').addClass('loading');
-    if($('input.name').val()!=''&&$('input.address').val()!=''){
+    if($('input.name').val()!='' && $('input.address').val()!=''){
       sendMessage('/lookupaddress', "address=" + $('input.address').val() + "&name=" + $('input.name').val());      
-//      sendMessage('/addme', "name=" + $('input.name').val() + "&address=" + $('input.address').val());      
     }
   });
   
   $('.listMeButton').unbind().click(function(){
     $('.listMeForm').dialog({modal: true, width: 800, height: 275});
   });
+  
+  $('.myLocationsButton').unbind().click(function(){
+    $('#myLocationsForm').remove();
+    var f = createMyLocationsForm();
+    f.dialog({modal: true, width: 800, height: 800});
+    sendMessage('/mylocations')
+  });
+}
+
+createMyLocationsForm = function(){
+  var form = $('<div class="left" id="myLocationsForm"></div>');
+  form.append('<h3>My Locations</h3>');
+  form.append('<div class="myLocations"></div>');
+  return form;
+}
+
+displayMyLocations = function(locations){
+  $(locations).each(function(){
+    $('#myLocationsForm .myLocations').append( $('<div class="ui-corner-all greenBorder margin10 padding10"></div>').append(
+      '<h3>'+this.name+'</h3>').append(
+        '<div class="smallText">' + this.address + '</div>').append(
+          '<div class="myLocationInfo '+this.placekey+'" ></h3>'));
+  });
+}
+
+createLocationForm = function(location){
+  var form = '<div placekey="'+location.placekey+'" class="locationForm">'+
+    '<h2>' + location.name + '</h2><div class="dividerLeft"></div><div class="smallText">' + location.address + '</div>' + 
+    '<div class="marginTop10">Preorder something?</div>'+ 
+    '<textarea class="preorder"></textarea>' + 
+    '<div class="ui-helper-clearfix marginTop10">'+
+    '<div class="blueButton onMyWayButton" placekey="'+location.placekey+'"><div>On my way!</div></div>'+
+    '</div>'+ 
+    '</div>';
+  return form;
 }
 
 bindLocations = function(locations){
@@ -118,10 +143,13 @@ bindLocations = function(locations){
       });
     
       var infowindow = new google.maps.InfoWindow({
-        content: '<h2>'+ this.name+ '</h2>' + this.address
+        content: createLocationForm(this)
       });
       google.maps.event.addListener(marker, 'click', function() {
         infowindow.open(map,marker);
+        $('.onMyWayButton').unbind().click(function(){
+          sendMessage('/onmyway', 'message=' + $('div[placekey='+$(this).attr('placekey')+']').find('textarea').val() + '&placekey=' + $(this).attr('placekey'));
+        });
       });
       markers.push(marker);
     }
@@ -144,41 +172,25 @@ onMessage = function(m) {
         case "display_address_lookup":
           $('input').removeClass('loading');
           $('.listMeForm').dialog('close');
-//          alert($m.results);
-          break;                    
+          break;   
+        case "customer_coming":
+          $('.messages').empty().append($m.person + " is en route to " + $m.destination + "! open your locations for more info. ");
+          if($('#myLocationsForm').length > 0){
+            $('#myLocationsForm .'+$m.placekey).append('<div class="dividerLeft marginTop10"></div><div>' + $m.person + ' is on the way.</div><div class="smallText">' + ($m.message) + '</div>');
+          }
+          break;  
+        case "my_locations":
+          displayMyLocations($m.locations);
+          break;               
      }
    }
 }
 
 function displayUsers(users){
-//  var users = eval("("+users+")");
   $('.users').empty();
-//  $(markers).each(function(){
-//    this.setMap(null);
-//  });
-//  markers = [];
   $(users).each(function(){
     $('.users').append('<h3>' + this.person + '</h3>'); 
-//    var userlatlon = new google.maps.LatLng(this.latitude,this.longitude);
-//    var marker = new google.maps.Marker({
-//      position: userlatlon,
-//      animation: google.maps.Animation.DROP,
-//      title:this.person
-//    });
-    
-//    var infowindow = new google.maps.InfoWindow({
-//      content: this.person
-//    });
-//    google.maps.event.addListener(marker, 'click', function() {
-//      infowindow.open(map,marker);
-//    });
-//    markers.push(marker);
   });
-//  $(markers).each(function(idx, marker){
-//    setTimeout(function() {marker.setMap(map);}, idx * 200);
-//  });
-  
-  
 }
 
 $(document).ready(function(){
@@ -196,32 +208,19 @@ $(window).unload( function () { onClose(); } );
           <div class="header alpha20 ui-corner-all ui-helper-clearfix">
             <div class="floatLeft marginTop10 marginLeft10">Hello, {{nickname}} | <a href="{{ url }}">{{ url_linktext }}</a></div>
             <div class="floatRight padding2">
+              <div class="floatLeft messages marginTop10 marginRight10"></div>
               <div class="blueButton floatRight listMeButton"><div>List Your Place</div></div>
-              <div class="blueButton floatRight"><div>Latest Grids</div></div>
+              <div class="blueButton floatRight myLocationsButton"><div>My Locations</div></div>
             </div>
           </div>
-          <!-- 
-          <div class="alpha60 greenBorder ui-corner-all marginTop10 ui-helper-clearfix">
-            <div class="logoImage floatLeft"><img src="/images/hghub_logo.png"></div>
-          	<div class="container130 alpha20White ui-corner-all margin10">
-              <div class="adBlock floatLeft"><a href="http://vdoba.eveny.net" target="blank">Want your own virtual space? Get your vdoba now!</a></div>
-              <div class="adBlock floatLeft"><a href="http://vdoba.eveny.net" target="blank">Enterprise or Corporate? Don't miss out! Get into the 3rd dimension with Enterprise Hypergrid!</a></div>
-              <div class="adBlock floatLeft"><a href="http://vdoba.eveny.net" target="blank">Private, Secure Virtual Events for classes, launches, conferences and more, with 3dVirtualEvents! </a></div>
-            </div>    
-          </div>
-          -->
         </div>
+
         <div class="middle ui-corner-top alpha20 ui-helper-clearfix">
-          {% ifequal templateType "index" %}
           <div class="middleContent ui-corner-all alpha20Grey">
             <div id="map_canvas"></div>
             <div class="users"></div>
-            {% for docs in documents.entry %}
-            {{docs.title.text}}<br />
-            {% endfor%}
-            {{nickname}} <a href="{{ url }}">{{ url_linktext }}</a>
           </div>
-          {% endifequal %}
+
           <div class="listMeForm middleContent ui-corner-all alpha20Grey padding10 hidden">
             <div>
               <h2>Whats the name of your pub/bar/club?</h2>

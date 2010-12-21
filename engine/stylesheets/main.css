@@ -36,7 +36,9 @@ h3      { text-shadow: 1px 1px 3px #eee; margin: 5px;  color: #073565; }
 .adBlock a { display: block; text-shadow: 1px 1px 4px #0F2D0E; margin: 2px 3px; margin-top: 5px;  color: #ebf5fb; font-size: 10pt; }
 .adBlock a:hover { text-shadow: 1px 1px 4px #0F2D0E; color: #cccccc;}
 .listMeForm {text-align: left;}
-
+textarea.preorder { width: 370px; height: 40px; }
+.smallText { font-size: 7.5pt; font-style: italic; }
+.locationForm {width: 400px; height: 200px; }
 /*Math.floor(0.2 * 255).toString(16);*/
 .alpha20 {
   background: rgb(0, 0, 0);

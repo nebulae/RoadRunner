@@ -33,13 +33,6 @@ class Location(db.Model):
     person = db.UserProperty()
     placekey = db.StringProperty()
     
-class Customer(db.Model):
-    name = db.StringProperty()
-    autoOrder = db.StringProperty()
-    notes = db.StringListProperty()
-    currentLocations = db.ReferenceProperty()
-    person = db.UserProperty()
-
 class Connection(db.Model):
     person = db.UserProperty()
     channelKey = db.StringProperty() 
@@ -67,69 +60,61 @@ class LocationsUpdate():
         people_query = Connection.all();
         response = { 'action': self.action, 'locations' : locations }
         for connection in people_query:
-            logging.log(logging.INFO, "to " + connection.channelKey + ": " + simplejson.dumps(response))
+            logging.log(logging.INFO, "to " + 
+                        connection.channelKey + ": " + 
+                        simplejson.dumps(response))
             channel.send_message(connection.channelKey, simplejson.dumps(response));
         
-                        
-          
-class UserAndLocation():
-    person = None
-    latitude = None
-    longitude = None
-    def toJson(self):
-        return { 
-                'person' : self.person.nickname(), 
-                'latitude': self.latitude, 
-                'longitude' : self.longitude
-        }
+class OnMyWay(webapp.RequestHandler):
+    action = "customer_coming"
+    def post(self):
+        key = users.get_current_user().user_id()
+        message = self.request.get('message')
+        place = self.request.get('placekey')
+        destination_query = Location.gql("where placekey='" + place + "'")
+        d = None;
+        for destination in destination_query:
+            d = destination
+        logging.log(logging.INFO, "going to " + d.name);
+        if d != None:
+            userToSendTo = d.person.user_id();
+            logging.log(logging.INFO, "sending to  " + userToSendTo + "( "+ d.person.nickname() +" )");
+            userSending_query = Connection.gql("where channelKey='" + key + "'")
+            u = None
+            for usersending in userSending_query:
+                u = usersending.person
+            logging.log(logging.INFO, "customer: " + u.nickname());
+            if u != None:
+                response = { 'action': self.action, 'person' : u.nickname(), 'message': message, 'destination' : d.name, 'placekey' : d.placekey }
+                channel.send_message(userToSendTo, simplejson.dumps(response));
         
-class UsersResponse():
-    action = "display_users";
-    users = None;
-    
-    def get_users(self):
-        return self.users
-    
-    def get_users_json(self):
-        strings = [];
-        for user in self.users:
-            strings.append(user.toJson())
-        return strings
-    
-    def dispatch(self):
-        people_query = Connection.all();          
-        self.users = [];
-        for connection in people_query:
-            ul = UserAndLocation();
-            ul.person = connection.person
-            ul.latitude = connection.latitude
-            ul.longitude = connection.longitude
-            self.users.append(ul);
-
-        people_query = Connection.all();
-        response = {
-                    'action': self.action, 
-                    'users' : self.get_users_json()
-        }; 
-        
-        for connection in people_query:
-            logging.log(logging.INFO, "to " + connection.channelKey + ": " + simplejson.dumps(response))
-            channel.send_message(connection.channelKey, simplejson.dumps(response));
-    
+class MyLocations(webapp.RequestHandler):
+    action = "my_locations"
+    def post(self):
+        locations = [];
+        location_query = Location.all();
+        for location in location_query:
+            if location.person.user_id() == users.get_current_user().user_id():
+                locations.append({
+                              'name': location.name, 
+                              'address' : location.address, 
+                              'latitude' : location.latitude,
+                              'longitude' : location.longitude,
+                              'placekey' : location.placekey 
+                              }
+                );
+        response = { 'action': self.action, 'locations' : locations }
+        channel.send_message(users.get_current_user().user_id(), simplejson.dumps(response));
+                                           
 class ConnectionClosed(webapp.RequestHandler):
     def post(self):
         key = self.request.get('g');
-        connectionToClose = Connection.gql("where channelKey='" + key + "'");
-        
+        connectionToClose = Connection.gql("where channelKey='" + key + "'");      
         for connection in connectionToClose:
             connection.delete();
-        
-        ur = UsersResponse();
-        ur.dispatch();
-    
+            
 class Handshake(webapp.RequestHandler):
     def post(self):
-#        get the key from the request
         key = self.request.get('g');
         lat = self.request.get('latitude');
         lng = self.request.get('longitude');
@@ -140,11 +125,6 @@ class Handshake(webapp.RequestHandler):
             if(len(str(lng))>0): 
                 connection.longitude = float(lng)
             db.put(connection)
-        
-        ur = UsersResponse();
-        ur.dispatch();
-#        lr = LocationsUpdate();
-#        lr.dispatch();
         
 class AddAddress(webapp.RequestHandler):
     def post(self):
@@ -177,67 +157,6 @@ class AddAddress(webapp.RequestHandler):
                     }
             channel.send_message(key, simplejson.dumps(response))
           
-class AddLocation(webapp.RequestHandler):
-    def post(self):
-        key = self.request.get('g');
-        name = self.request.get('name');
-        address = self.request.get('address');
-        placekey = addLocation(name, address)
-        update = LocationsUpdate()
-        update.dispatch(placekey)
-        
-class GetConnectedUsers:
-    def get(self):
-        people_query = Connection.all();       
-        respo = [];
-        for connection in people_query:
-            respo.append(connection.person.nickname());
-        
-        self.response.out.write(respo);
-        
-class Dispatcher(webapp.RequestHandler):
-    def get(self):
-        user = users.GetCurrentUser()
-        if user:
-            url = users.create_logout_url(self.request.uri)
-            url_linktext = 'Logout'
-            userkey = addConnection();
-            token = channel.create_channel(userkey)
-            template_values = {
-                               'url': url,
-                               'token' : token,
-                               'key': userkey,
-                               'url_linktext': url_linktext,
-                               'initial_message': 'foo!',
-                               'nickname' : user.nickname()
-            }
-            path = os.path.join(os.path.dirname(__file__), 'index.html')
-            self.response.out.write(template.render(path, template_values))
-        else : 
-            url = users.create_login_url(self.request.uri)
-            self.redirect(url)
-
-class Join(webapp.RequestHandler):
-    def get(self):
-        user = users.GetCurrentUser()
-        if user:
-            url = users.create_logout_url(self.request.uri)
-            url_linktext = 'Logout'
-            userkey = user.user_id();
-            token = channel.create_channel(userkey)
-            template_values = {
-                               'url': url,
-                               'url_linktext': url_linktext,
-                               'token' : token,
-                               'key': userkey,
-                               'templateType' : "join",
-                               'nickname' : user.nickname()
-            }
-            path = os.path.join(os.path.dirname(__file__), 'index.html')
-            self.response.out.write(template.render(path, template_values))
-        else : 
-            url = users.create_login_url(self.request.uri)
-            self.redirect(url)
                            
 class MainPage(webapp.RequestHandler):
     def get(self):
@@ -287,22 +206,20 @@ def addLocation(name, address, lat, lon):
 def addConnection():
     user = users.get_current_user()
     if user:
-            userkey = user.user_id()
-            connection = Connection(key_name = userkey);
-            connection.person = user
-            connection.channelKey = userkey;
-            connection.put();
-            return userkey;
+        userkey = user.user_id()
+        connection = Connection(key_name = userkey);
+        connection.person = user
+        connection.channelKey = userkey;
+        connection.put();
+        return userkey;
           
               
 application = webapp.WSGIApplication([('/', MainPage),
                                       ('/handshake', Handshake),
                                       ('/lookupaddress', AddAddress),
-                                      ('/addme', AddLocation),
-                                      ('/join', Join),
-                                      ('/dispatchview', Dispatcher),
-                                      ('/closed', ConnectionClosed),
-                                      ('/users', GetConnectedUsers)],debug=True)
+                                      ('/onmyway', OnMyWay),
+                                      ('/mylocations', MyLocations),
+                                      ('/closed', ConnectionClosed)],debug=True)
 
 def main():
     run_wsgi_app(application)
