@@ -162,9 +162,6 @@ class MainPage(webapp.RequestHandler):
     def get(self):
         
         user = users.get_current_user()
-        client = gdata.docs.client.DocsClient(source='eveny-nebulae-v1')
-        client.ClientLogin("trinity.testbot@gmail.com", "!@#$qwer", client.source)
-        documents_feed = client.GetDocList(uri='/feeds/default/private/full/-/pending')
         locations = Location.all()
         if user:
             url = users.create_logout_url(self.request.uri)
@@ -174,7 +171,6 @@ class MainPage(webapp.RequestHandler):
             template_values = {
                                'url': url,
                                'token' : token,
-                               'documents' : documents_feed,
                                'locations' : locations,
                                'key': userkey,
                                'url_linktext': url_linktext,
